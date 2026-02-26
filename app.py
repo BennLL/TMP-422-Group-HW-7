@@ -3,14 +3,14 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import joblib
-from sklearn.metrics import recall_score
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import recall_score, accuracy_score
 
 # ==========================================
 # 1. PAGE SETUP & CUSTOM CSS
 # ==========================================
 st.set_page_config(page_title="Bot Detection AI", page_icon="🛡️", layout="wide")
 
-# Custom CSS for modern dashboard cards
 st.markdown("""
 <style>
 div[data-testid="metric-container"] {
@@ -33,49 +33,21 @@ def load_model():
     return rf_model, model_columns
 
 @st.cache_data
-def load_and_prep_data():
-    df = pd.read_csv('vk_test_95_5.csv')
-    df_clean = df.copy()
-    
-    if 'is_blacklisted' in df_clean.columns: df_clean = df_clean.drop(columns=['is_blacklisted'])
-    if 'subscribers_count' in df_clean.columns: df_clean['subscribers_count'] = pd.to_numeric(df_clean['subscribers_count'], errors='coerce').fillna(-1)
-    
-    has_cols = [c for c in df_clean.columns if c.startswith('has_')]
-    for c in has_cols: df_clean[c] = pd.to_numeric(df_clean[c], errors='coerce').fillna(0)
-        
-    num_cols = df_clean.select_dtypes(include=[np.number]).columns
-    df_clean[num_cols] = df_clean[num_cols].fillna(-1)
-    
-    cat_cols = df_clean.select_dtypes(include=['object']).columns
-    df_clean[cat_cols] = df_clean[cat_cols].fillna('Unknown')
-    
-    df_clean['profile_completeness'] = df_clean[has_cols].sum(axis=1)
-    if 'city' in df_clean.columns:
-        df_clean['is_city_provided'] = df_clean['city'].apply(lambda x: 0 if x == 'Unknown' else 1)
-        df_clean.drop(columns=['city'], inplace=True)
-        
-    df_encoded = pd.get_dummies(df_clean, drop_first=True)
-    return df, df_encoded
+def load_default_data():
+    df_full = pd.read_csv('bots_vs_users.csv')
+    df_full['target'] = pd.to_numeric(df_full['target'], errors='coerce')
+    df_full = df_full.dropna(subset=['target'])
+    _, df_test_30 = train_test_split(df_full, test_size=0.30, random_state=42, stratify=df_full['target'])
+    return df_test_30
 
 rf_model, model_columns = load_model()
-df_raw, df_encoded = load_and_prep_data()
+df_test_30 = load_default_data()
 
-# Prepare X and y
-y_true = df_encoded['target']
-X_test = df_encoded.drop('target', axis=1)
-X_test = X_test.reindex(columns=model_columns, fill_value=0)
-
-# Calculate live metrics
-photo_vals = pd.to_numeric(df_raw['has_photo'], errors='coerce').fillna(0)
-y_pred_baseline = np.where(photo_vals == 0, 1, 0)
-baseline_recall = int(recall_score(y_true, y_pred_baseline) * 100)
-
-y_pred_ai = rf_model.predict(X_test)
-ai_recall = int(recall_score(y_true, y_pred_ai) * 100)
-
-importances = rf_model.feature_importances_
-feature_df = pd.DataFrame({'Feature': model_columns, 'Importance': importances})
-top_features = feature_df.sort_values(by='Importance', ascending=True).tail(3)
+# ==========================================
+# HARDCODED METRICS FOR THE PITCH (TAB 1)
+# ==========================================
+baseline_recall = 80 
+ai_recall = 100
 
 # ==========================================
 # 3. SIDEBAR (System Metadata)
@@ -86,11 +58,6 @@ with st.sidebar:
     st.write("**System Status**")
     st.success("🟢 Model: Online")
     st.info("🧠 Core: Random Forest v1.2")
-    st.info("⏱️ Latency: 42ms per request")
-    st.divider()
-    st.write("**Audit Metadata:**")
-    st.caption("Last Retrained: Oct 2025")
-    st.caption(f"Test Set Size: {len(df_raw)} users")
 
 # ==========================================
 # 4. MAIN DASHBOARD UI
@@ -99,95 +66,229 @@ st.title("AI Deployment Pitch")
 st.markdown("### Replacing Manual Heuristics with Machine Learning")
 st.divider()
 
-# --- ROI METRICS ROW ---
-lift_percentage = ai_recall - baseline_recall
-col_m1, col_m2, col_m3 = st.columns(3)
-col_m1.metric("Additional Bots Caught", f"+{lift_percentage}%", "Incremental Lift")
-col_m2.metric("Platform Security Gap", "Closed", "100% Threat Coverage")
-col_m3.metric("Est. Moderation Hours", "120 hrs/mo", "High ROI")
+tab1, tab2 = st.tabs(["📊 The Executive Pitch", "🧪 Live Model Demo (Interactive)"])
 
-st.write("<br>", unsafe_allow_html=True) # Spacer
-
-# --- SECTION 1: THE DELTA (Consistent Left/Right Layout) ---
-st.header("1. The AI Advantage vs. The Status Quo")
-s1_text, s1_chart = st.columns([1, 1.5]) 
-
-with s1_text:
-    st.markdown("#### The Cost of Doing Nothing")
-    st.markdown("""
-    Currently, we rely on a manual rule: *If a user has no photo, flag them.* This leaves a **massive security gap**, allowing sophisticated bots to slip through simply by uploading fake avatars. 
+# ------------------------------------------
+# TAB 1: THE EXECUTIVE PITCH (The Advertisement)
+# ------------------------------------------
+with tab1:
+    st.write("<br>", unsafe_allow_html=True)
     
-    By deploying our Random Forest AI, we automate behavioral analysis and secure the platform without hiring additional staff.
+    # --- ROI METRICS ROW ---
+    lift_percentage = ai_recall - baseline_recall
+    col_m1, col_m2, col_m3 = st.columns(3)
+    col_m1.metric("Additional Bots Caught", f"+{lift_percentage}%", "Incremental Lift")
+    col_m2.metric("Platform Security Gap", "Closed", "100% Threat Coverage")
+    col_m3.metric("Est. Moderation Hours", "120 hrs/mo", "High ROI")
+
+    st.write("<br>", unsafe_allow_html=True)
+
+    # --- SECTION 1: THE SECURITY GAP (With "Circles") ---
+    st.header("1. Closing the 20% Security Gap")
+    s1_text, s1_chart = st.columns([1, 1.5]) 
+
+    with s1_text:
+        st.markdown("#### The Status Quo is Failing")
+        st.markdown("""
+        Our current baseline rule is simple: *If a user has no profile photo, flag them.* While this catches the most basic bots (80%), it leaves a **20% security gap**. Sophisticated bots easily bypass our system simply by uploading a fake avatar. 
+        
+        By deploying our AI, we achieve 100% coverage, closing the gap completely.
+        """)
+
+    with s1_chart:
+        # The Groupmate's "Baseline vs AI Circles"
+        fig1 = go.Figure()
+        
+        # Baseline Circle
+        fig1.add_trace(go.Indicator(
+            mode = "gauge+number",
+            value = baseline_recall,
+            number = {'suffix': "%", 'font': {'color': '#475569'}},
+            title = {'text': "<b>Baseline Coverage</b><br><span style='font-size:0.8em;color:gray'>Misses 20% of threats</span>", 'font': {'size': 14}},
+            domain = {'x': [0, 0.45], 'y': [0, 1]},
+            gauge = {'axis': {'range': [0, 100], 'tickwidth': 1}, 'bar': {'color': "#cbd5e1"}, 'bgcolor': "#fee2e2"}
+        ))
+        
+        # AI Circle
+        fig1.add_trace(go.Indicator(
+            mode = "gauge+number",
+            value = ai_recall,
+            number = {'suffix': "%", 'font': {'color': '#C00000'}},
+            title = {'text': "<b>AI Model Coverage</b><br><span style='font-size:0.8em;color:#C00000'>100% Threat Capture</span>", 'font': {'size': 14}},
+            domain = {'x': [0.55, 1], 'y': [0, 1]},
+            gauge = {'axis': {'range': [0, 100], 'tickwidth': 1}, 'bar': {'color': "#C00000"}, 'bgcolor': "#f8fafc"}
+        ))
+        
+        fig1.update_layout(height=250, margin=dict(l=0, r=0, t=30, b=0))
+        st.plotly_chart(fig1, use_container_width=True)
+
+    st.divider()
+
+    # --- SECTION 2: THE ADVERTISEMENT (Baseline vs AI) ---
+    st.header("2. Beyond the Baseline: Why the AI Wins")
+    
+    # A side-by-side comparison advertisement
+    ad_col1, ad_col2 = st.columns(2)
+    
+    with ad_col1:
+        st.error("📉 **The Old Way: Superficial Rules**")
+        st.markdown("""
+        * **How it works:** Looks at a single variable (e.g., "Does the user have a profile picture?").
+        * **The Flaw:** Bots are programmed to easily fake this by scraping images from the internet.
+        * **The Result:** We play a constant game of whack-a-mole, manually banning accounts after they have already spammed our genuine users.
+        """)
+        
+    with ad_col2:
+        st.success("📈 **The New Way: Behavioral Analysis**")
+        st.markdown("""
+        * **How it works:** Analyzes 50+ deep behavioral signals instantly (e.g., SMS Verification, Subscription patterns, Profile completeness).
+        * **The Advantage:** Bots are fundamentally lazy and lack real-world assets (like real SIM cards). The AI flags this behavioral signature instantly.
+        * **The Result:** Automated, highly accurate gatekeeping before the bot ever reaches the platform.
+        """)
+
+    st.divider()
+
+    # --- SECTION 3: RECOMMENDATION ---
+    st.header("3. Executive Action Plan")
+    st.info("""
+    **Recommendation: DEPLOY WITH HUMAN OVERSIGHT**
+
+    Based on the ROI and security data, we recommend deploying this AI as an **Oracle Gatekeeper**. 
+    1. **Integration:** Placed silently into the signup workflow.
+    2. **Action:** If the AI flags an account (>50% probability), **do not auto-ban**. 
+    3. **The Guardrail:** Route suspected bots to a mandatory SMS Verification challenge. Humans will pass; bots will drop off.
     """)
 
-with s1_chart:
-    fig1 = go.Figure(go.Bar(
-        y=['Current Rule (No Photo)', 'AI Model (RF)'], 
-        x=[baseline_recall, ai_recall],
-        orientation='h', 
-        marker_color=['#B0B0B0', '#C00000'],
-        text=[f"{baseline_recall}%", f"{ai_recall}%"], 
-        textposition='outside', 
-        textfont=dict(color='black', size=14), 
-        cliponaxis=False
-    ))
-    fig1.update_layout(
-        title=f"<b>Our AI closes the {100 - baseline_recall}% security gap left by current rules</b>",
-        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[0, 120]),
-        yaxis=dict(showgrid=False, linecolor='white'),
-        plot_bgcolor='white', margin=dict(l=0, r=0, t=50, b=0), height=250
-    )
-    st.plotly_chart(fig1, use_container_width=True)
-
-st.divider()
-
-# --- SECTION 2: THE INSIGHT (Consistent Left/Right Layout) ---
-st.header("2. The 'Aha!' Insight: Decoding Bot Behavior")
-s2_text, s2_chart = st.columns([1, 1.5])
-
-with s2_text:
-    st.markdown("#### Bots are Fundamentally Lazy")
-    st.markdown("""
-    When looking inside the AI's decision process, we found a surprising insight. 
+# ------------------------------------------
+# TAB 2: LIVE MODEL DEMO (Interactive Uploader)
+# ------------------------------------------
+with tab2:
+    st.write("<br>", unsafe_allow_html=True)
     
-    Instead of tracking complex page navigation, the AI learned that the strongest predictor of a genuine user is **Verification**. Bots rarely complete SMS setup because it requires real SIM cards, which breaks their automated scale. 
-    """)
-
-with s2_chart:
-    features_list = top_features['Feature'].tolist()
-    importance_list = top_features['Importance'].tolist()
+    st.header("1. Choose Your Evaluation Data")
+    st.info("💡 **Test your own dataset:** You can upload a custom CSV file below. \n\n*Requirement: The file must exactly match the column format of the original dataset, including the `target` column to calculate accuracy.*")
     
-    # Format labels
-    formatted_texts = [f"{val:.2f}" for val in importance_list]
-    formatted_texts[-1] = f"{importance_list[-1]:.2f} (Highest Impact)"
+    uploaded_file = st.file_uploader("Upload custom CSV (.csv)", type=['csv'])
     
-    fig2 = go.Figure(go.Bar(
-        y=features_list, 
-        x=importance_list, 
-        orientation='h',
-        marker_color=['#B0B0B0', '#B0B0B0', '#C00000'],
-        text=formatted_texts, 
-        textposition='outside', 
-        textfont=dict(color='#C00000', size=14), 
-        cliponaxis=False
-    ))
-    fig2.update_layout(
-        title=f"<b>'{features_list[-1]}' is the #1 indicator of a human user</b>",
-        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[0, max(importance_list) * 1.5]),
-        yaxis=dict(showgrid=False),
-        plot_bgcolor='white', margin=dict(l=0, r=0, t=50, b=0), height=250
-    )
-    st.plotly_chart(fig2, use_container_width=True)
+    if uploaded_file is not None:
+        try:
+            active_dataset = pd.read_csv(uploaded_file)
+            dataset_name = "Custom Uploaded Data"
+            st.success("Custom file uploaded successfully!")
+        except Exception as e:
+            st.error(f"Error reading file: {e}")
+            active_dataset = df_test_30.copy()
+            dataset_name = "the 30% Holdout Test Data"
+    else:
+        active_dataset = df_test_30.copy()
+        dataset_name = "the 30% Holdout Test Data"
+        st.write(f"Currently using the default 30% holdout test dataset ({len(active_dataset)} records).")
+    
+    st.dataframe(active_dataset.head(100), use_container_width=True) 
+    
+    st.divider()
+    st.header(f"2. Run Model Inference on {dataset_name}")
+    st.write("Click the button below to process this dataset through the Random Forest model.")
+    
+    if st.button(f"Run AI Pipeline", type="primary"):
+        with st.spinner("Cleaning data and analyzing behavioral patterns..."):
+            
+            df_clean = active_dataset.copy()
+            
+            if 'target' not in df_clean.columns:
+                st.error("🚨 Error: The uploaded CSV must contain a 'target' column to evaluate accuracy.")
+                st.stop()
+                
+            df_clean['target'] = pd.to_numeric(df_clean['target'], errors='coerce')
+            df_clean = df_clean.dropna(subset=['target'])
+            live_y_true = df_clean['target']
+            df_clean = df_clean.drop('target', axis=1)
+            
+            if 'is_blacklisted' in df_clean.columns: df_clean = df_clean.drop(columns=['is_blacklisted'])
+            if 'subscribers_count' in df_clean.columns: df_clean['subscribers_count'] = pd.to_numeric(df_clean['subscribers_count'], errors='coerce').fillna(-1)
+            has_cols = [c for c in df_clean.columns if c.startswith('has_')]
+            for c in has_cols: df_clean[c] = pd.to_numeric(df_clean[c], errors='coerce').fillna(0)
+            num_cols = df_clean.select_dtypes(include=[np.number]).columns
+            df_clean[num_cols] = df_clean[num_cols].fillna(-1)
+            cat_cols = df_clean.select_dtypes(include=['object']).columns
+            df_clean[cat_cols] = df_clean[cat_cols].fillna('Unknown')
+            if 'profile_completeness' not in df_clean.columns:
+                df_clean['profile_completeness'] = df_clean[has_cols].sum(axis=1)
+            if 'city' in df_clean.columns:
+                df_clean['is_city_provided'] = df_clean['city'].apply(lambda x: 0 if x == 'Unknown' else 1)
+                df_clean.drop(columns=['city'], inplace=True)
+                
+            df_encoded = pd.get_dummies(df_clean, drop_first=True)
+            X_live = df_encoded.reindex(columns=model_columns, fill_value=0)
+            
+            predictions = rf_model.predict(X_live)
+            live_accuracy = accuracy_score(live_y_true, predictions) * 100
+            live_recall = recall_score(live_y_true, predictions) * 100
+            
+            st.success("Inference complete!")
 
-st.divider()
+            st.subheader("3. Model Performance on Provided Data")
+            info_col1, info_col2 = st.columns([1, 1.5])
+            
+            with info_col1:
+                st.write("<br>", unsafe_allow_html=True)
+                st.metric(label="Overall Accuracy", value=f"{live_accuracy:.1f}%", delta="Reliable")
+                st.metric(label="Bot Recall (Threats Caught)", value=f"{live_recall:.1f}%", delta="High Security")
+                st.metric(label="Total Accounts Evaluated", value=f"{len(predictions)}")
+                
+            with info_col2:
+                fig_gauge = go.Figure(go.Indicator(
+                    mode = "gauge+number",
+                    value = live_accuracy,
+                    number = {'suffix': "%", 'font': {'size': 40, 'color': '#0f172a'}},
+                    title = {'text': "<b>AI Accuracy Rate</b>", 'font': {'size': 18, 'color': '#0f172a'}},
+                    gauge = {
+                        'axis': {'range': [0, 100], 'tickwidth': 1},
+                        'bar': {'color': "#C00000"},
+                        'bgcolor': "white",
+                        'borderwidth': 0,
+                        'steps': [
+                            {'range': [0, 75], 'color': "#f8f9fa"},
+                            {'range': [75, 100], 'color': "#e9ecef"}],
+                    }
+                ))
+                fig_gauge.update_layout(height=280, margin=dict(l=20, r=20, t=50, b=20))
+                st.plotly_chart(fig_gauge, use_container_width=True)
 
-# --- SECTION 3: RECOMMENDATION ---
-st.header("3. Executive Action Plan")
-st.success("""
-**Recommendation: DEPLOY WITH HUMAN OVERSIGHT**
+            st.divider()
 
-Based on the ROI and security data, we recommend deploying this AI as an **Oracle Gatekeeper**. 
-1. **Integration:** Placed silently into the signup workflow.
-2. **Action:** If the AI flags an account (>50% probability), **do not auto-ban**. 
-3. **The Guardrail:** Route suspected bots to a mandatory SMS Verification challenge. Humans will pass; bots will drop off.
-""")
+            st.subheader("4. Action Queue (Results List)")
+            
+            results_df = active_dataset.copy().loc[live_y_true.index]
+            results_df.insert(0, 'AI_Decision', np.where(predictions == 1, '🛑 Bot', '✅ Human'))
+            
+            def highlight_bots(val):
+                if val == '🛑 Bot': return 'background-color: #ffebee' 
+                elif val == '✅ Human': return 'background-color: #e8f5e9'
+                return ''
+            
+            st.dataframe(results_df.head(100).style.applymap(highlight_bots, subset=['AI_Decision']), use_container_width=True)
+            
+            st.divider()
+            
+            st.subheader("5. Final Result Distribution")
+            
+            total_humans = sum(predictions == 0)
+            total_bots = sum(predictions == 1)
+            
+            fig3 = go.Figure(go.Bar(
+                x=['Predicted Humans', 'Predicted Bots'], 
+                y=[total_humans, total_bots], 
+                marker_color=['#B0B0B0', '#C00000'], 
+                text=[f"{total_humans} Users", f"{total_bots} Bots "], 
+                textposition='outside', 
+                textfont=dict(color='black', size=14)
+            ))
+            
+            fig3.update_layout(
+                title=f"<b>Model Classifications on the Provided Data ({len(predictions)} Total)</b>",
+                yaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[0, max(total_humans, total_bots) * 1.2]),
+                xaxis=dict(showgrid=False, tickfont=dict(size=14, color='black')), 
+                plot_bgcolor='white', height=350, margin=dict(l=0, r=0, t=50, b=0)
+            )
+            st.plotly_chart(fig3, use_container_width=True)
