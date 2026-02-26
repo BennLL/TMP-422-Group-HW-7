@@ -98,7 +98,7 @@ with tab1:
     with s1_text:
         st.markdown("#### The Data Run")
         st.markdown("""
-        The current baseline is based on a sample of our company’s data and in-house model, resulting in **38% missed bots**, which directly translates to only **62% coverage**. 
+        We discovered that the baseline in-house model resulted in **38% missed bots**, which directly translates to only **62% coverage**. 
         
         However, running the sample data through the new AI model provided a full, **100% coverage**, removing all potential threats from the dataset.
         """)
